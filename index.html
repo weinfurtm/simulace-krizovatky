@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Simulace krizovatky</title>
+</head>
+<body>
+<main class="app-shell">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: Canvas;
+      --fg: CanvasText;
+      --muted: color-mix(in srgb, CanvasText 62%, Canvas 38%);
+      --panel: color-mix(in srgb, Canvas 92%, CanvasText 8%);
+      --line: color-mix(in srgb, CanvasText 22%, Canvas 78%);
+      --road: color-mix(in srgb, CanvasText 20%, Canvas 80%);
+      --lane: color-mix(in srgb, Canvas 72%, CanvasText 28%);
+      --blue: #2563eb;
+      --red: #dc2626;
+      --ok: #15803d;
+      --bad: #b91c1c;
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: minmax(270px, 340px) minmax(0, 1fr);
+      gap: 16px;
+      width: 100%;
+      color: var(--fg);
+      background: var(--bg);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .control-panel,
+    .workspace {
+      min-width: 0;
+    }
+
+    .control-panel {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    .panel-block {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 500;
+    }
+
+    .control {
+      display: grid;
+      gap: 5px;
+    }
+
+    .control label,
+    .select-label {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    input,
+    select,
+    button {
+      font: inherit;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    select,
+    button {
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--fg);
+      background: var(--bg);
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .result-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .result {
+      display: grid;
+      gap: 3px;
+      padding: 9px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--bg);
+    }
+
+    .result strong {
+      font-weight: 500;
+    }
+
+    .result span {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .result.is-collision strong {
+      color: var(--bad);
+    }
+
+    .result.is-clear strong {
+      color: var(--ok);
+    }
+
+    .workspace {
+      display: grid;
+      gap: 10px;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: color-mix(in srgb, Canvas 86%, CanvasText 14%);
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .swatch {
+      width: 18px;
+      height: 10px;
+      border-radius: 2px;
+      background: currentColor;
+    }
+
+    .blue {
+      color: var(--blue);
+    }
+
+    .red {
+      color: var(--red);
+    }
+
+    .impact {
+      color: var(--bad);
+    }
+
+    @media (max-width: 760px) {
+      .app-shell {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+
+  <aside class="control-panel" aria-label="Ovladani simulace">
+    <section class="panel-block">
+      <h2 class="panel-title">Vstupy</h2>
+
+      <div class="control">
+        <label for="blueSpeed">Rychlost modreho <span id="blueSpeedValue"></span></label>
+        <input id="blueSpeed" type="range" min="1" max="30" step="0.1">
+      </div>
+
+      <div class="control">
+        <label for="redSpeed">Rychlost cerveneho <span id="redSpeedValue"></span></label>
+        <input id="redSpeed" type="range" min="1" max="30" step="0.1">
+      </div>
+
+      <div class="control">
+        <label for="blueStartDistance">Vzdalenost modreho od stretu <span id="blueStartDistanceValue"></span></label>
+        <input id="blueStartDistance" type="range" min="5" max="50" step="0.1">
+      </div>
+
+      <div class="control">
+        <label for="redStartDistance">Vzdalenost cerveneho od stretu <span id="redStartDistanceValue"></span></label>
+        <input id="redStartDistance" type="range" min="5" max="60" step="0.1">
+      </div>
+
+      <div class="control">
+        <label for="redDeviationDistance">Bod vyboceni od stretu <span id="redDeviationDistanceValue"></span></label>
+        <input id="redDeviationDistance" type="range" min="1" max="25" step="0.1">
+      </div>
+
+      <div class="control">
+        <label for="impactOffsetX">Korekce stretu vodorovne <span id="impactOffsetXValue"></span></label>
+        <input id="impactOffsetX" type="range" min="-8" max="8" step="0.1">
+      </div>
+
+      <div class="control">
+        <label for="impactOffsetY">Korekce stretu svisle <span id="impactOffsetYValue"></span></label>
+        <input id="impactOffsetY" type="range" min="-8" max="8" step="0.1">
+      </div>
+
+      <div class="control">
+        <label for="redDeviationAngleDeg">Uhel vyboceni <span id="redDeviationAngleDegValue"></span></label>
+        <input id="redDeviationAngleDeg" type="range" min="5" max="65" step="1">
+      </div>
+
+      <div class="control">
+        <label class="select-label" for="routeMode">Zobrazena trasa</label>
+        <select id="routeMode">
+          <option value="diagonal">Cervene auto vyboci doprava</option>
+          <option value="straight">Cervene auto jede rovne</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="panel-block">
+      <h2 class="panel-title">Cas</h2>
+      <div class="control">
+        <label for="timeSlider">Cas simulace <span id="timeValue"></span></label>
+        <input id="timeSlider" type="range" min="0" max="8" step="0.01">
+      </div>
+      <div class="button-row">
+        <button id="playPause" type="button">Spustit</button>
+        <button id="reset" type="button">Zacatek</button>
+      </div>
+    </section>
+
+    <section class="panel-block">
+      <h2 class="panel-title">Vysledek</h2>
+      <div id="currentResult" class="result" aria-live="polite"></div>
+      <div class="result-grid">
+        <div id="diagonalResult" class="result"></div>
+        <div id="straightResult" class="result"></div>
+      </div>
+    </section>
+  </aside>
+
+  <section class="workspace">
+    <canvas id="scene" width="980" height="620" aria-label="Simulace krizovatky se dvema auty"></canvas>
+    <div class="legend" aria-label="Legenda">
+      <span class="legend-item blue"><span class="swatch"></span>Modre auto: zleva doprava</span>
+      <span class="legend-item red"><span class="swatch"></span>Cervene auto: zespodu nahoru / diagonalne doprava</span>
+      <span class="legend-item impact"><span class="swatch"></span>Misto stretu: stred 3. pruhu zprava</span>
+    </div>
+  </section>
+
+  <script>
+    (() => {
+      const SIM = {
+        units: {
+          distance: "m",
+          speed: "m/s"
+        },
+        scale: {
+          pixelsPerMeter: 10
+        },
+        road: {
+          centerX: 520,
+          centerY: 315,
+          verticalLaneWidth: 38,
+          horizontalLaneWidth: 46
+        },
+        car: {
+          width: 24,
+          length: 58
+        },
+        defaultState() {
+          return {
+            blueSpeed: 8,
+            redSpeed: 7.2,
+            blueStartDistance: 26.6,
+            redStartDistance: 29.5,
+            redDeviationDistance: 9.5,
+            impactOffsetX: 0,
+            impactOffsetY: 0,
+            redDeviationAngleDeg: 34,
+            duration: 8,
+            step: 0.01
+          };
+        },
+        metersToPixels(value) {
+          return value * this.scale.pixelsPerMeter;
+        },
+        pixelsToMeters(value) {
+          return value / this.scale.pixelsPerMeter;
+        },
+        impactPoint(state = {}) {
+          return {
+            x: this.road.centerX - this.road.verticalLaneWidth / 2 + this.metersToPixels(state.impactOffsetX || 0),
+            y: this.road.centerY + this.metersToPixels(state.impactOffsetY || 0)
+          };
+        },
+        laneCenters() {
+          const leftmost = this.road.centerX - this.road.verticalLaneWidth * 1.5;
+          return {
+            blueY: this.road.centerY,
+            redX: leftmost
+          };
+        },
+        positionAt(state, route, t) {
+          const lanes = this.laneCenters();
+          const impact = this.impactPoint(state);
+          const blueX = impact.x - this.metersToPixels(state.blueStartDistance) + this.metersToPixels(state.blueSpeed * t);
+          const blue = {
+            x: blueX,
+            y: lanes.blueY,
+            angle: 0,
+            width: this.car.width,
+            length: this.car.length
+          };
+          const straightDistance = state.redStartDistance - state.redSpeed * t;
+          const straightY = impact.y + this.metersToPixels(straightDistance);
+          let red = {
+            x: lanes.redX,
+            y: straightY,
+            angle: -90,
+            width: this.car.width,
+            length: this.car.length
+          };
+          if (route === "diagonal" && straightDistance <= state.redDeviationDistance) {
+            const beforeDeviation = (state.redStartDistance - state.redDeviationDistance) / state.redSpeed;
+            const dt = Math.max(0, t - beforeDeviation);
+            const theta = state.redDeviationAngleDeg * Math.PI / 180;
+            red = {
+              x: lanes.redX + this.metersToPixels(Math.sin(theta) * state.redSpeed * dt),
+              y: impact.y + this.metersToPixels(state.redDeviationDistance - Math.cos(theta) * state.redSpeed * dt),
+              angle: -90 + state.redDeviationAngleDeg,
+              width: this.car.width,
+              length: this.car.length
+            };
+          }
+          return { blue, red };
+        },
+        getVehicleCorners(pose) {
+          const radians = pose.angle * Math.PI / 180;
+          const cos = Math.cos(radians);
+          const sin = Math.sin(radians);
+          const halfLength = pose.length / 2;
+          const halfWidth = pose.width / 2;
+          const local = [
+            { x: -halfLength, y: -halfWidth },
+            { x: halfLength, y: -halfWidth },
+            { x: halfLength, y: halfWidth },
+            { x: -halfLength, y: halfWidth }
+          ];
+          return local.map((point) => ({
+            x: pose.x + point.x * cos - point.y * sin,
+            y: pose.y + point.x * sin + point.y * cos
+          }));
+        },
+        projectPolygon(points, axis) {
+          let min = Infinity;
+          let max = -Infinity;
+          for (const point of points) {
+            const value = point.x * axis.x + point.y * axis.y;
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+          }
+          return { min, max };
+        },
+        polygonsIntersect(a, b) {
+          const axes = [];
+          for (const polygon of [a, b]) {
+            for (let i = 0; i < polygon.length; i += 1) {
+              const p1 = polygon[i];
+              const p2 = polygon[(i + 1) % polygon.length];
+              const edge = { x: p2.x - p1.x, y: p2.y - p1.y };
+              const length = Math.hypot(edge.x, edge.y);
+              if (length > 0) {
+                axes.push({ x: -edge.y / length, y: edge.x / length });
+              }
+            }
+          }
+          return axes.every((axis) => {
+            const pa = this.projectPolygon(a, axis);
+            const pb = this.projectPolygon(b, axis);
+            return pa.max >= pb.min && pb.max >= pa.min;
+          });
+        },
+        contactRegion(blue, red) {
+          const redHeading = red.angle * Math.PI / 180;
+          const redFrontX = red.x + Math.cos(redHeading) * red.length / 2;
+          const rearThreshold = blue.x - blue.length * 0.15;
+          if (redFrontX < rearThreshold) return "zadni cast modreho auta";
+          if (redFrontX > blue.x + blue.length * 0.15) return "predni cast modreho auta";
+          return "stredni cast modreho auta";
+        },
+        detectCollision(state, route) {
+          for (let t = 0; t <= state.duration; t += state.step) {
+            const poses = this.positionAt(state, route, t);
+            const blueCorners = this.getVehicleCorners(poses.blue);
+            const redCorners = this.getVehicleCorners(poses.red);
+            if (this.polygonsIntersect(blueCorners, redCorners)) {
+              return {
+                collided: true,
+                time: Number(t.toFixed(2)),
+            point: {
+              x: Number(this.pixelsToMeters((poses.blue.x + poses.red.x) / 2).toFixed(2)),
+              y: Number(this.pixelsToMeters((poses.blue.y + poses.red.y) / 2).toFixed(2))
+            },
+                region: this.contactRegion(poses.blue, poses.red)
+              };
+            }
+          }
+          return { collided: false, time: null, point: null, region: "bez kontaktu" };
+        },
+        collisionPointToCanvas(result) {
+          if (!result.collided || !result.point) return null;
+          return {
+            x: this.metersToPixels(result.point.x),
+            y: this.metersToPixels(result.point.y)
+          };
+        },
+        playbackEndTime(state, route) {
+          const result = this.detectCollision(state, route);
+          return result.collided ? result.time : state.duration;
+        },
+        clampPlaybackTime(state, route, time) {
+          return Number(Math.min(time, this.playbackEndTime(state, route)).toFixed(2));
+        },
+        evaluateBoth(state) {
+          return {
+            diagonal: this.detectCollision(state, "diagonal"),
+            straight: this.detectCollision(state, "straight")
+          };
+        }
+      };
+
+      window.IntersectionSimulator = SIM;
+    })();
+  </script>
+
+  <script>
+    (() => {
+      const doc = window.document;
+      if (!doc || !doc.getElementById || !doc.getElementById("scene")) return;
+
+      const sim = window.IntersectionSimulator;
+      const canvas = doc.getElementById("scene");
+      const ctx = canvas.getContext("2d");
+      const controls = {
+        blueSpeed: doc.getElementById("blueSpeed"),
+        redSpeed: doc.getElementById("redSpeed"),
+        blueStartDistance: doc.getElementById("blueStartDistance"),
+        redStartDistance: doc.getElementById("redStartDistance"),
+        redDeviationDistance: doc.getElementById("redDeviationDistance"),
+        impactOffsetX: doc.getElementById("impactOffsetX"),
+        impactOffsetY: doc.getElementById("impactOffsetY"),
+        redDeviationAngleDeg: doc.getElementById("redDeviationAngleDeg"),
+        routeMode: doc.getElementById("routeMode"),
+        timeSlider: doc.getElementById("timeSlider"),
+        playPause: doc.getElementById("playPause"),
+        reset: doc.getElementById("reset")
+      };
+      const labels = {
+        blueSpeed: doc.getElementById("blueSpeedValue"),
+        redSpeed: doc.getElementById("redSpeedValue"),
+        blueStartDistance: doc.getElementById("blueStartDistanceValue"),
+        redStartDistance: doc.getElementById("redStartDistanceValue"),
+        redDeviationDistance: doc.getElementById("redDeviationDistanceValue"),
+        impactOffsetX: doc.getElementById("impactOffsetXValue"),
+        impactOffsetY: doc.getElementById("impactOffsetYValue"),
+        redDeviationAngleDeg: doc.getElementById("redDeviationAngleDegValue"),
+        time: doc.getElementById("timeValue"),
+        current: doc.getElementById("currentResult"),
+        diagonal: doc.getElementById("diagonalResult"),
+        straight: doc.getElementById("straightResult")
+      };
+
+      let playing = false;
+      let lastFrame = 0;
+      const defaultState = sim.defaultState();
+
+      function setDefaults() {
+        for (const key of ["blueSpeed", "redSpeed", "blueStartDistance", "redStartDistance", "redDeviationDistance", "impactOffsetX", "impactOffsetY", "redDeviationAngleDeg"]) {
+          controls[key].value = defaultState[key];
+        }
+        controls.routeMode.value = "diagonal";
+        controls.timeSlider.max = defaultState.duration;
+        controls.timeSlider.value = 0;
+      }
+
+      function readStateFromControls() {
+        return {
+          blueSpeed: Number(controls.blueSpeed.value),
+          redSpeed: Number(controls.redSpeed.value),
+          blueStartDistance: Number(controls.blueStartDistance.value),
+          redStartDistance: Number(controls.redStartDistance.value),
+          redDeviationDistance: Number(controls.redDeviationDistance.value),
+          impactOffsetX: Number(controls.impactOffsetX.value),
+          impactOffsetY: Number(controls.impactOffsetY.value),
+          redDeviationAngleDeg: Number(controls.redDeviationAngleDeg.value),
+          duration: defaultState.duration,
+          step: defaultState.step
+        };
+      }
+
+      function writeLabels(state) {
+        labels.blueSpeed.textContent = `${state.blueSpeed.toFixed(1)} m/s`;
+        labels.redSpeed.textContent = `${state.redSpeed.toFixed(1)} m/s`;
+        labels.blueStartDistance.textContent = `${state.blueStartDistance.toFixed(1)} m`;
+        labels.redStartDistance.textContent = `${state.redStartDistance.toFixed(1)} m`;
+        labels.redDeviationDistance.textContent = `${state.redDeviationDistance.toFixed(1)} m`;
+        labels.impactOffsetX.textContent = `${state.impactOffsetX.toFixed(1)} m`;
+        labels.impactOffsetY.textContent = `${state.impactOffsetY.toFixed(1)} m`;
+        labels.redDeviationAngleDeg.textContent = `${state.redDeviationAngleDeg} deg`;
+        labels.time.textContent = `${Number(controls.timeSlider.value).toFixed(2)} s`;
+      }
+
+      function formatResult(title, result) {
+        if (!result.collided) {
+          return `<strong>${title}: bez srazky</strong><span>Kolize v casovem okne simulace nenastala.</span>`;
+        }
+        return `<strong>${title}: srazka v ${result.time.toFixed(2)} s</strong><span>${result.region}, bod ${result.point.x} m; ${result.point.y} m</span>`;
+      }
+
+      function setResult(element, title, result) {
+        element.classList.toggle("is-collision", result.collided);
+        element.classList.toggle("is-clear", !result.collided);
+        element.innerHTML = formatResult(title, result);
+      }
+
+      function drawRoads() {
+        const road = sim.road;
+        const lane = road.verticalLaneWidth;
+        const totalVertical = lane * 4;
+        const horizontal = road.horizontalLaneWidth;
+        const impact = sim.impactPoint(readStateFromControls());
+        ctx.save();
+        ctx.fillStyle = getCss("--road");
+        ctx.fillRect(road.centerX - totalVertical / 2, 0, totalVertical, canvas.height);
+        ctx.fillRect(0, road.centerY - horizontal / 2, canvas.width, horizontal);
+
+        ctx.strokeStyle = getCss("--lane");
+        ctx.lineWidth = 1;
+        ctx.setLineDash([14, 10]);
+        for (let i = 1; i < 4; i += 1) {
+          const x = road.centerX - totalVertical / 2 + i * lane;
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, canvas.height);
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        ctx.strokeStyle = getCss("--line");
+        ctx.strokeRect(road.centerX - totalVertical / 2, 0, totalVertical, canvas.height);
+        ctx.strokeRect(0, road.centerY - horizontal / 2, canvas.width, horizontal);
+
+        const lanes = sim.laneCenters();
+        ctx.strokeStyle = "rgba(220, 38, 38, 0.55)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(lanes.redX, canvas.height);
+        ctx.lineTo(lanes.redX, road.centerY - horizontal);
+        ctx.stroke();
+
+        ctx.strokeStyle = getCss("--bad");
+        ctx.fillStyle = getCss("--bad");
+        ctx.setLineDash([]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(impact.x - 8, impact.y);
+        ctx.lineTo(impact.x + 8, impact.y);
+        ctx.moveTo(impact.x, impact.y - 8);
+        ctx.lineTo(impact.x, impact.y + 8);
+        ctx.stroke();
+        ctx.font = "12px system-ui, sans-serif";
+        ctx.fillText("Misto stretu", impact.x + 10, impact.y - 10);
+        ctx.restore();
+      }
+
+      function drawCar(pose, color, label) {
+        ctx.save();
+        ctx.translate(pose.x, pose.y);
+        ctx.rotate(pose.angle * Math.PI / 180);
+        ctx.fillStyle = color;
+        ctx.strokeStyle = "rgba(0, 0, 0, 0.45)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        roundRect(ctx, -pose.length / 2, -pose.width / 2, pose.length, pose.width, 5);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "rgba(255, 255, 255, 0.72)";
+        ctx.fillRect(pose.length * 0.12, -pose.width * 0.32, pose.length * 0.2, pose.width * 0.64);
+        ctx.restore();
+
+        ctx.save();
+        ctx.fillStyle = getCss("--fg");
+        ctx.font = "12px system-ui, sans-serif";
+        ctx.fillText(label, pose.x - 18, pose.y - pose.width - 8);
+        ctx.restore();
+      }
+
+      function drawTrajectory(state, route) {
+        ctx.save();
+        ctx.strokeStyle = route === "diagonal" ? "rgba(220, 38, 38, 0.7)" : "rgba(220, 38, 38, 0.35)";
+        ctx.lineWidth = 2;
+        ctx.setLineDash(route === "diagonal" ? [] : [8, 8]);
+        ctx.beginPath();
+        for (let t = 0; t <= state.duration; t += 0.1) {
+          const point = sim.positionAt(state, route, t).red;
+          if (t === 0) ctx.moveTo(point.x, point.y);
+          else ctx.lineTo(point.x, point.y);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawCollisionMarker(result) {
+        if (!result.collided) return;
+        const point = sim.collisionPointToCanvas(result);
+        if (!point) return;
+        ctx.save();
+        ctx.strokeStyle = getCss("--bad");
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 12, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawScene(state, route, t, currentResult) {
+        const poses = sim.positionAt(state, route, t);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawRoads();
+        drawTrajectory(state, "straight");
+        drawTrajectory(state, "diagonal");
+        drawCollisionMarker(currentResult);
+        drawCar(poses.blue, getCss("--blue"), "Modre");
+        drawCar(poses.red, getCss("--red"), "Cervene");
+      }
+
+      function roundRect(context, x, y, width, height, radius) {
+        context.moveTo(x + radius, y);
+        context.lineTo(x + width - radius, y);
+        context.quadraticCurveTo(x + width, y, x + width, y + radius);
+        context.lineTo(x + width, y + height - radius);
+        context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        context.lineTo(x + radius, y + height);
+        context.quadraticCurveTo(x, y + height, x, y + height - radius);
+        context.lineTo(x, y + radius);
+        context.quadraticCurveTo(x, y, x + radius, y);
+      }
+
+      function getCss(name) {
+        return getComputedStyle(doc.documentElement).getPropertyValue(name).trim();
+      }
+
+      function render() {
+        const state = readStateFromControls();
+        const route = controls.routeMode.value;
+        const both = sim.evaluateBoth(state);
+        const current = route === "diagonal" ? both.diagonal : both.straight;
+        const endTime = sim.playbackEndTime(state, route);
+        controls.timeSlider.max = endTime;
+        controls.timeSlider.value = sim.clampPlaybackTime(state, route, Number(controls.timeSlider.value));
+        const time = Number(controls.timeSlider.value);
+        writeLabels(state);
+        setResult(labels.current, "Aktualni trasa", current);
+        setResult(labels.diagonal, "Diagonalne doprava", both.diagonal);
+        setResult(labels.straight, "Rovne", both.straight);
+        drawScene(state, route, time, current);
+      }
+
+      function tick(now) {
+        if (!playing) return;
+        const state = readStateFromControls();
+        const route = controls.routeMode.value;
+        const endTime = sim.playbackEndTime(state, route);
+        const elapsed = lastFrame ? (now - lastFrame) / 1000 : 0;
+        lastFrame = now;
+        const next = Math.min(endTime, Number(controls.timeSlider.value) + elapsed);
+        controls.timeSlider.value = next;
+        if (next >= endTime) {
+          playing = false;
+          controls.playPause.textContent = "Spustit";
+        }
+        render();
+        if (playing) requestAnimationFrame(tick);
+      }
+
+      for (const input of Object.values(controls)) {
+        if (input && input !== controls.playPause && input !== controls.reset) {
+          input.addEventListener("input", render);
+          input.addEventListener("change", render);
+        }
+      }
+
+      controls.playPause.addEventListener("click", () => {
+        playing = !playing;
+        controls.playPause.textContent = playing ? "Pauza" : "Spustit";
+        lastFrame = 0;
+        if (playing) requestAnimationFrame(tick);
+      });
+
+      controls.reset.addEventListener("click", () => {
+        playing = false;
+        controls.playPause.textContent = "Spustit";
+        controls.timeSlider.value = 0;
+        render();
+      });
+
+      setDefaults();
+      render();
+    })();
+  </script>
+</main>
+</body>
+</html>
